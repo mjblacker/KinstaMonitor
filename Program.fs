@@ -7,45 +7,36 @@ open System.Threading.Tasks
 open System.Collections.Generic
 
 // Configuration types
-type Config = {
-    ApiKey: string
-    EnvId: string
-    TriggerString: string
-    CheckIntervalMinutes: int
-    LogFileName: string
-}
+type Config =
+    { ApiKey: string
+      EnvId: string
+      TriggerString: string
+      CheckIntervalMinutes: int
+      LogFileName: string }
 
 // API response types
-type LogEntry = {
-    timestamp: string
-    message: string
-    fullLine: string
-}
+type LogEntry =
+    { timestamp: string
+      message: string
+      fullLine: string }
 
-type ContainerInfo = {
-    logs: string
-}
+type ContainerInfo = { logs: string }
 
-type Environment = {
-    container_info: ContainerInfo
-}
+type Environment = { container_info: ContainerInfo }
 
-type LogResponse = {
-    environment: Environment
-}
+type LogResponse = { environment: Environment }
 
 
-type RestartResponse = {
-    message: string
-    operation_id: string option
-}
+type RestartResponse =
+    { message: string
+      status: int
+      operation_id: string option }
 
 // Service state to track processed logs
-type ServiceState = {
-    mutable LastProcessedTimestamp: DateTime option
-    mutable ProcessedLogHashes: Set<string>
-    mutable LastCheckTime: DateTime option
-}
+type ServiceState =
+    { mutable LastProcessedTimestamp: DateTime option
+      mutable ProcessedLogHashes: Set<string>
+      mutable LastCheckTime: DateTime option }
 
 // Utility functions
 module Utils =
@@ -55,29 +46,29 @@ module Utils =
         | false, _ -> None
 
     let parseLogLine (line: string) =
-        if String.IsNullOrWhiteSpace(line) then None
+        if String.IsNullOrWhiteSpace(line) then
+            None
         else
             // Try to extract timestamp from the beginning of the line
             // Format appears to be: "2025/05/26 08:10:32 [error] ..."
             let parts = line.Split(' ', 3)
+
             if parts.Length >= 3 then
                 let dateStr = parts.[0]
                 let timeStr = parts.[1]
                 let timestampStr = $"{dateStr} {timeStr}"
                 let remainingMessage = if parts.Length > 2 then parts.[2] else ""
 
-                Some {
-                    timestamp = timestampStr
-                    message = remainingMessage
-                    fullLine = line
-                }
+                Some
+                    { timestamp = timestampStr
+                      message = remainingMessage
+                      fullLine = line }
             else
                 // If we can't parse timestamp, treat the whole line as message
-                Some {
-                    timestamp = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")
-                    message = line
-                    fullLine = line
-                }
+                Some
+                    { timestamp = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")
+                      message = line
+                      fullLine = line }
 
     let parseLogsFromResponse (logsString: string) =
         logsString.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -93,29 +84,28 @@ module Utils =
                 let json = File.ReadAllText(configPath)
                 let options = JsonSerializerOptions()
                 options.PropertyNameCaseInsensitive <- true
-                Some (JsonSerializer.Deserialize<Config>(json, options))
+                Some(JsonSerializer.Deserialize<Config>(json, options))
             else
                 None
-        with
-        | ex ->
+        with ex ->
             printfn $"Error loading config: {ex.Message}"
             None
 
-    let createDefaultConfig() = {
-        ApiKey = "your-kinsta-api-key-here"
-        EnvId = "your-environment-id-here"
-        TriggerString = "Fatal error"
-        CheckIntervalMinutes = 5
-        LogFileName = "error"
-    }
+    let createDefaultConfig () =
+        { ApiKey = "your-kinsta-api-key-here"
+          EnvId = "your-environment-id-here"
+          TriggerString = "Fatal error"
+          CheckIntervalMinutes = 5
+          LogFileName = "error" }
 
     let saveConfig (config: Config) (configPath: string) =
         try
-            let json = JsonSerializer.Serialize(config, JsonSerializerOptions(WriteIndented = true))
+            let json =
+                JsonSerializer.Serialize(config, JsonSerializerOptions(WriteIndented = true))
+
             File.WriteAllText(configPath, json)
             true
-        with
-        | ex ->
+        with ex ->
             printfn $"Error saving config: {ex.Message}"
             false
 
@@ -135,7 +125,9 @@ type KinstaApiClient(apiKey: string) =
     member this.GetLogsAsync(envId: string, fileName: string, lines: int) =
         async {
             try
-                let url = $"https://api.kinsta.com/v2/sites/environments/{envId}/logs?file_name={fileName}&lines={lines}"
+                let url =
+                    $"https://api.kinsta.com/v2/sites/environments/{envId}/logs?file_name={fileName}&lines={lines}"
+
                 let! response = httpClient.GetAsync(url) |> Async.AwaitTask
 
                 if response.IsSuccessStatusCode then
@@ -143,31 +135,30 @@ type KinstaApiClient(apiKey: string) =
                     let options = JsonSerializerOptions()
                     options.PropertyNameCaseInsensitive <- true
 
-                    logInfo content
-
                     let logResponse = JsonSerializer.Deserialize<LogResponse>(content, options)
-                    let parsedLogs = Utils.parseLogsFromResponse logResponse.environment.container_info.logs
-                    return Ok parsedLogs
-                    (*let logResponse = JsonSerializer.Deserialize<LogResponse>(content, options)
-                    return
-                        match logResponse with
-                        | null -> Error $"Failed to parse the data"
-                        | content -> Ok content.logs*)
+
+                    match logResponse with
+                    | Null -> return Error $"Failed to parse the data"
+                    | NonNull logResponse ->
+                        let parsedLogs =
+                            Utils.parseLogsFromResponse logResponse.environment.container_info.logs
+                        return Ok parsedLogs
                 else
                     let! errorContent = response.Content.ReadAsStringAsync() |> Async.AwaitTask
                     return Error $"Failed to fetch logs. Status: {response.StatusCode}, Content: {errorContent}"
-            with
-            | ex -> return Error $"Exception while fetching logs: {ex.Message}"
+            with ex ->
+                return Error $"Exception while fetching logs: {ex.Message}"
         }
 
     member this.RestartPhpAsync(envId: string) =
         async {
             try
-                return Ok {message = "restarted"; operation_id = Some "1234"}
 
-                (*let url = "https://api.kinsta.com/v2/sites/tools/restart-php"
-                let payload = JsonSerializer.Serialize({| env_id = envId |})
-                let content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json")
+                let url = "https://api.kinsta.com/v2/sites/tools/restart-php"
+                let payload = JsonSerializer.Serialize({| environment_id = envId |})
+
+                let content =
+                    new StringContent(payload, System.Text.Encoding.UTF8, "application/json")
 
                 let! response = httpClient.PostAsync(url, content) |> Async.AwaitTask
 
@@ -176,13 +167,15 @@ type KinstaApiClient(apiKey: string) =
                     let options = JsonSerializerOptions()
                     options.PropertyNameCaseInsensitive <- true
 
-                    let restartResponse = JsonSerializer.Deserialize<RestartResponse>(responseContent, options)
+                    let restartResponse =
+                        JsonSerializer.Deserialize<RestartResponse>(responseContent, options)
+
                     return Ok restartResponse
                 else
                     let! errorContent = response.Content.ReadAsStringAsync() |> Async.AwaitTask
-                    return Error $"Failed to restart PHP. Status: {response.StatusCode}, Content: {errorContent}"*)
-            with
-            | ex -> return Error $"Exception while restarting PHP: {ex.Message}"
+                    return Error $"Failed to restart PHP. Status: {response.StatusCode}, Content: {errorContent}"
+            with ex ->
+                return Error $"Exception while restarting PHP: {ex.Message}"
         }
 
     interface IDisposable with
@@ -192,7 +185,11 @@ type KinstaApiClient(apiKey: string) =
 // Main monitoring service
 type LogMonitorService(config: Config) =
     let apiClient = new KinstaApiClient(config.ApiKey)
-    let state = { LastProcessedTimestamp = None; ProcessedLogHashes = Set.empty; LastCheckTime = None }
+
+    let state =
+        { LastProcessedTimestamp = None
+          ProcessedLogHashes = Set.empty
+          LastCheckTime = None }
 
     let logInfo message =
         let timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
@@ -226,10 +223,10 @@ type LogMonitorService(config: Config) =
 
                     // Check for trigger string in new logs
                     let triggeredLogs =
-                        newLogs
-                        |> Array.filter (fun log -> log.message.Contains(config.TriggerString))
+                        newLogs |> Array.filter (fun log -> log.message.Contains(config.TriggerString))
 
-                    if triggeredLogs.Length > 0 then
+                    // only restart if more than two of them in the new logs
+                    if triggeredLogs.Length >= 2 then
                         logWarning $"Found {triggeredLogs.Length} log entries containing trigger string: '{config.TriggerString}'"
 
                         // Print the triggered log entries
@@ -238,14 +235,15 @@ type LogMonitorService(config: Config) =
 
                         // Restart PHP (only once per check)
                         logInfo "Initiating PHP restart..."
+
                         match! apiClient.RestartPhpAsync(config.EnvId) with
                         | Ok response ->
                             logInfo $"PHP restart initiated successfully: {response.message}"
+
                             match response.operation_id with
                             | Some opId -> logInfo $"Operation ID: {opId}"
                             | None -> ()
-                        | Error error ->
-                            logError $"Failed to restart PHP: {error}"
+                        | Error error -> logError $"Failed to restart PHP: {error}"
                     else
                         logInfo "No trigger string found in new logs"
 
@@ -256,14 +254,15 @@ type LogMonitorService(config: Config) =
 
                     // Keep only recent hashes to prevent memory growth
                     if state.ProcessedLogHashes.Count > 1000 then
-                        let recentHashes = state.ProcessedLogHashes |> Set.toArray |> Array.skip 500 |> Set.ofArray
+                        let recentHashes =
+                            state.ProcessedLogHashes |> Set.toArray |> Array.skip 500 |> Set.ofArray
+
                         state.ProcessedLogHashes <- recentHashes
                         logInfo "Cleaned up old processed log hashes"
                 else
                     logInfo "No new log entries to process"
 
-            | Error error ->
-                logError error
+            | Error error -> logError error
         }
 
     member this.StartAsync(cancellationToken: CancellationToken) =
@@ -278,6 +277,7 @@ type LogMonitorService(config: Config) =
             while not cancellationToken.IsCancellationRequested do
                 try
                     let now = DateTime.Now
+
                     let shouldCheck =
                         match state.LastCheckTime with
                         | None -> true // First run
@@ -293,8 +293,7 @@ type LogMonitorService(config: Config) =
                     do! Async.Sleep(sleepIntervalMs)
 
                 with
-                | :? OperationCanceledException ->
-                    logInfo "Service cancellation requested"
+                | :? OperationCanceledException -> logInfo "Service cancellation requested"
                 | ex ->
                     logError $"Unexpected error in monitoring loop: {ex.Message}"
                     do! Async.Sleep(5000) // Wait 5 seconds before retrying on error
@@ -315,7 +314,8 @@ let main args =
         | Some cfg -> cfg
         | None ->
             printfn "No configuration file found. Creating default configuration..."
-            let defaultConfig = Utils.createDefaultConfig()
+            let defaultConfig = Utils.createDefaultConfig ()
+
             if Utils.saveConfig defaultConfig configPath then
                 printfn $"Default configuration saved to {configPath}"
                 printfn "Please edit the configuration file with your API key and environment details, then restart the service."
@@ -325,7 +325,10 @@ let main args =
                 exit 1
 
     // Validate configuration
-    if config.ApiKey = "your-kinsta-api-key-here" || config.EnvId = "your-environment-id-here" then
+    if
+        config.ApiKey = "your-kinsta-api-key-here"
+        || config.EnvId = "your-environment-id-here"
+    then
         printfn "Please configure your API key and environment ID in the configuration file"
         exit 1
 
@@ -343,18 +346,18 @@ let main args =
 
     // Handle Ctrl+C gracefully
     Console.CancelKeyPress.Add(fun args ->
-        if args.Cancel then failwith "forced shutdown"
+        if args.Cancel then
+            failwith "forced shutdown"
+
         args.Cancel <- true
         cancellationTokenSource.Cancel()
-        printfn "\nShutdown requested..."
-    )
+        printfn "\nShutdown requested...")
 
     // Start the monitoring service
     use service = new LogMonitorService(config)
 
     try
-        service.StartAsync(cancellationTokenSource.Token)
-        |> Async.RunSynchronously
+        service.StartAsync(cancellationTokenSource.Token) |> Async.RunSynchronously
 
         printfn "Service stopped successfully"
         0
