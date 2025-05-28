@@ -63,7 +63,7 @@ module Utils =
     let createDefaultConfig () =
         { ApiKey = "your-kinsta-api-key-here"
           EnvId = "your-environment-id-here"
-          TriggerString = "Fatal error"
+          TriggerString = "upstream timed out (110: Connection timed out)"
           CheckIntervalMinutes = 5
           LogFileName = "error" }
 
